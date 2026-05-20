@@ -24,7 +24,7 @@ public static class GamesEndpoints
             int id,
             IGamesRepository gamesRepository) =>
         {
-            Game? game = await gamesRepository.GetByIdAsync(id);
+            Game? game = await gamesRepository.GetByIdWithGenreAsync(id);
 
             return game is null ?
                 Results.NotFound() : Results.Ok(game.ToGameSummaryDto());
@@ -41,10 +41,17 @@ public static class GamesEndpoints
             var createdGame = await gamesRepository.AddAsync(game);
             await gamesRepository.SaveChangesAsync();
 
+            // BUSCA PERFORMÁTICA: Traz apenas o jogo recém-criado já com o relacionamento
+            var gameWithGenre = await gamesRepository.GetByIdWithGenreAsync(createdGame.Id);
+
+            // Proteção opcional contra nulo, embora saibamos que ele acabou de ser criado
+            if (gameWithGenre is null)
+                return Results.NotFound();
+
             return Results.CreatedAtRoute(
                 GetGameEndpointName,
                 new { id = createdGame.Id },
-                createdGame.ToGameSummaryDto());
+                gameWithGenre.ToGameSummaryDto());
         });
 
         // PUT /games

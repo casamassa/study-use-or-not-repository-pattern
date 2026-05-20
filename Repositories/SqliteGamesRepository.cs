@@ -22,4 +22,12 @@ public class SqliteGamesRepository(GameStoreContext gameStoreContext)
                     .AsNoTracking()
                     .ToListAsync();
     }
+
+    public async Task<Game?> GetByIdWithGenreAsync(int id)
+    {
+        return await dbSet
+                        .Include(game => game.Genre)
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(game => game.Id == id);
+    }
 }
