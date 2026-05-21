@@ -64,3 +64,26 @@ Visualmente, a limpa no projeto ficou assim no painel do Source Control:
 - **Entity Framework Core 10**
 - **SQLite** (Como banco de dados local em modo WAL)
 - **VS Code** (Como IDE de desenvolvimento)
+
+---
+
+## 🧠 Análise Técnica: Usar ou não o Repository Pattern?
+
+Após experimentar as duas abordagens, o cenário de engenharia de software atual nos traz insights profundos sobre essa decisão arquitetural:
+
+### Por que o uso direto do DbContext se destaca hoje?
+
+- **O EF Core evoluiu:** O `DbContext` moderno já é, por definição, uma implementação robusta dos padrões _Repository_ (via `DbSet`) e _Unit of Work_ (via `SaveChangesAsync`). Criar uma nova camada sobre ele frequentemente resulta em redundância de código (_Boilerplate_).
+- **Fim do "Menor Denominador Comum":** Repositórios genéricos tendem a limitar o poder do EF Core. Operações otimizadas como `.Include()`, `.Select()` cirúrgicos ou `.AsNoTracking()` muitas vezes exigem a criação de métodos customizados para cada entidade (como o `GetByIdWithGenreAsync`), quebrando o propósito de uma abstração genérica única.
+- **Sinergia com Minimal APIs:** O design das Minimal APIs foi projetado para ser enxuto, direto e de alta performance. Injetar o `DbContext` diretamente nos endpoints respeita essa filosofia, reduzindo o custo de manutenção e facilitando a leitura do fluxo de dados.
+
+### Onde o Repository Pattern ainda possui espaço?
+
+A extinção do padrão não é absoluta. Ele ainda encontra justificativa em cenários específicos de arquitetura corporativa:
+
+1. **Múltiplas Fontes de Dados (Polyglot Persistence):** Quando um único endpoint precisa consolidar dados vindos de bancos relacionais (SQL), não-relacionais (NoSQL) e APIs externas, o repositório envelopa essa complexidade.
+2. **Domain-Driven Design (DDD) Estrito:** Em sistemas complexos, o repositório blinda o Domínio, garantindo que as regras de negócio interajam apenas com a raiz de um Agregado (ex: acessar `Pedido`, impedindo a manipulação isolada de `ItemPedido`).
+
+### Conclusão do Estudo de Caso
+
+Para microsserviços, APIs baseadas em CRUDs e arquiteturas modernas (como _Vertical Slice Architecture_), eliminar a camada de repositório e utilizar o framework nativo entrega código mais limpo, desenvolvimento ágil e menor débito técnico. **Menos código escrito significa menos código para manter.**
