@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 public static class GamesEndpoints
 {
     const string GetGameEndpointName = "GetGame";
@@ -9,12 +11,18 @@ public static class GamesEndpoints
 
         // GET /games?name=searchTerm
         group.MapGet("/", async (
-            IGamesRepository repository,
+            GameStoreContext dbContext,
             string? name) =>
         {
-            var games = string.IsNullOrWhiteSpace(name)
-                ? await repository.GetAllWithGenresAsync()
-                : await repository.SearchByNameAsync(name);
+            var query = dbContext.Games
+                                .Include(game => game.Genre)
+                                .AsNoTracking();
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                query = query.Where(game => game.Name.ToLower().Contains(name.ToLower()));
+            }
+            var games = await query.ToListAsync();
 
             return games.Select(game => game.ToGameSummaryDto());
         });
@@ -22,9 +30,12 @@ public static class GamesEndpoints
         // GET /games/1
         group.MapGet("/{id}", async (
             int id,
-            IGamesRepository gamesRepository) =>
+            GameStoreContext dbContext) =>
         {
-            Game? game = await gamesRepository.GetByIdWithGenreAsync(id);
+            Game? game = await dbContext.Games
+                .Include(game => game.Genre)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(game => game.Id == id);
 
             return game is null ?
                 Results.NotFound() : Results.Ok(game.ToGameSummaryDto());
@@ -34,33 +45,31 @@ public static class GamesEndpoints
         // POST /games
         group.MapPost("/", async (
             CreateGameDto newGame,
-            IGamesRepository gamesRepository) =>
+            GameStoreContext dbContext) =>
         {
             Game game = newGame.ToEntity();
 
-            var createdGame = await gamesRepository.AddAsync(game);
-            await gamesRepository.SaveChangesAsync();
+            dbContext.Games.Add(game);
+            await dbContext.SaveChangesAsync();
 
-            // BUSCA PERFORMÁTICA: Traz apenas o jogo recém-criado já com o relacionamento
-            var gameWithGenre = await gamesRepository.GetByIdWithGenreAsync(createdGame.Id);
-
-            // Proteção opcional contra nulo, embora saibamos que ele acabou de ser criado
-            if (gameWithGenre is null)
-                return Results.NotFound();
+            // CORRIGIDO: Carrega explicitamente o Genre do jogo recém-criado na memória
+            await dbContext.Entry(game)
+                .Reference(g => g.Genre)
+                .LoadAsync();
 
             return Results.CreatedAtRoute(
                 GetGameEndpointName,
-                new { id = createdGame.Id },
-                gameWithGenre.ToGameSummaryDto());
+                new { id = game.Id },
+                game.ToGameSummaryDto());
         });
 
         // PUT /games
         group.MapPut("/{id}", async (
             int id,
             UpdateGameDto updatedGame,
-            IGamesRepository gamesRepository) =>
+            GameStoreContext dbContext) =>
         {
-            var existingGame = await gamesRepository.GetByIdAsync(id);
+            var existingGame = await dbContext.Games.FindAsync(id);
 
             if (existingGame is null)
                 return Results.NotFound();
@@ -71,8 +80,7 @@ public static class GamesEndpoints
             existingGame.Price = updatedEntity.Price;
             existingGame.ReleaseDate = updatedEntity.ReleaseDate;
 
-            await gamesRepository.UpdateAsync(existingGame);
-            await gamesRepository.SaveChangesAsync();
+            await dbContext.SaveChangesAsync();
 
             return Results.NoContent();
         });
@@ -80,13 +88,17 @@ public static class GamesEndpoints
         // DELETE /games/1
         group.MapDelete("/{id}", async (
             int id,
-            IGamesRepository gamesRepository) =>
+            GameStoreContext dbContext) =>
         {
-            var deleted = await gamesRepository.DeleteAsync(id);
-            if (!deleted)
+            var existingGame = await dbContext.Games.FindAsync(id);
+
+            if (existingGame is null)
                 return Results.NotFound();
 
-            await gamesRepository.SaveChangesAsync();
+            await dbContext.Games
+                .Where(game => game.Id == id)
+                .ExecuteDeleteAsync();
+
             return Results.NoContent();
         });
 
